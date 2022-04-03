@@ -176,21 +176,48 @@ void TcpClient::on_stopUpgardeBtn_clicked()
 /* 选择IAP文件 */
 void TcpClient::on_chooseFileBtn_clicked()
 {
-    QString filePath = QFileDialog::getOpenFileName(this,"open","../");
-    if(false == filePath.isEmpty())
+    /* 1. 获取文件路径 此处为了记录上次的打开路径 */
+    QSettings setting("./Setting.ini", QSettings::IniFormat);
+    QString lastPath = setting.value("LastFilePath").toString();
+    QString FilePath = QFileDialog::getOpenFileName(this, \
+                                                    tr("Open File"), \
+                                                    lastPath, \
+                                                    tr("Model File(*_V*.hex *_V*.bin)"));
+
+    /* 2. 重新组合获取到的文件路径 */
+    QRegExp rx1("([^/]+)\\..+");                        /* 正则表达式 */
+    rx1.indexIn(FilePath);                              /* 获取总文件路径包括hex文件名 */
+    QString  HexName     = rx1.cap(1);               /* 获取hex文件名不包括后缀 */
+
+    int first            = FilePath.lastIndexOf("/");   /* 从当前路径最后一个字符开始查找'/' */
+    QString ExcepHexName = FilePath.left(first);        /* 获取除了hex文件外的路径 */
+
+    QString ToBin        = \
+            ExcepHexName + '/' + HexName + ".bin";      /* 组合bin文件路径 */
+
+
+    QString EndPath = FilePath;                         /* 最终显示的文件路径 */
+
+    if(false == EndPath.isEmpty())
     {
         filename.clear();
         fileSize = 0;
 
         /* 获取文件信息 */
-        QFileInfo info(filePath);
+        QFileInfo info(EndPath);
         filename = info.fileName();
         fileSize = info.size();
+
+        /* 打印文件信息 */
+        ui->ComRecvtextEdit->append(filename);
+//        ui->ComRecvtextEdit->append();
 
         sendSize = 0;
 
 
-        file.setFileName(filePath);
+        file.setFileName(EndPath);
+        ui->ComRecvtextEdit->append(EndPath);
+
 
         bool isOk = file.open(QIODevice::ReadOnly);
         if(false == isOk)
@@ -201,8 +228,38 @@ void TcpClient::on_chooseFileBtn_clicked()
 
     }else
     {
-      qDebug() << "选择路径出错";
+        ui->ComRecvtextEdit->append("选择路径出错");
     }
+
+
+//  QString filePath = QFileDialog::getOpenFileName(this,"open","../");
+
+//    if(false == FilePath.isEmpty())
+//    {
+//        filename.clear();
+//        fileSize = 0;
+
+//        /* 获取文件信息 */
+//        QFileInfo info(FilePath);
+//        filename = info.fileName();
+//        fileSize = info.size();
+
+//        sendSize = 0;
+
+
+//        file.setFileName(FilePath);
+
+//        bool isOk = file.open(QIODevice::ReadOnly);
+//        if(false == isOk)
+//        {
+//            qDebug() << "只读方式打开失败";
+//        }
+//        ui->chooseFileBtn->setEnabled(false);
+
+//    }else
+//    {
+//        ui->ComRecvtextEdit->append("选择路径出错");
+//    }
 
 }
 /* 清除 */
