@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>768</width>
-    <height>596</height>
+    <height>605</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -110,7 +110,11 @@
             </spacer>
            </item>
            <item row="2" column="0" colspan="2">
-            <widget class="QLineEdit" name="ServerIpEdit"/>
+            <widget class="QLineEdit" name="ServerIpEdit">
+             <property name="text">
+              <string>127.0.0.1</string>
+             </property>
+            </widget>
            </item>
            <item row="4" column="0">
             <widget class="QLabel" name="label_2">
@@ -150,7 +154,11 @@
             </widget>
            </item>
            <item row="5" column="0">
-            <widget class="QLineEdit" name="portEdit"/>
+            <widget class="QLineEdit" name="portEdit">
+             <property name="text">
+              <string>222</string>
+             </property>
+            </widget>
            </item>
           </layout>
          </widget>
@@ -274,7 +282,7 @@
             </widget>
            </item>
            <item row="0" column="1">
-            <widget class="QLineEdit" name="lineEdit"/>
+            <widget class="QLineEdit" name="FilePathLineEdit"/>
            </item>
            <item row="1" column="0" colspan="2">
             <widget class="QProgressBar" name="progressBar">

@@ -17,8 +17,10 @@ TcpClient::TcpClient(QWidget *parent) :
     /* 初始化套接字 */
     tcpClientSocket = NULL;
 
-    /* 分配空间,指定父对象  */
+    /* 分配空间,指定父对象 */
     tcpClientSocket = new QTcpSocket(this);  /* 创建socket变量 */
+
+    SignalSlotInit();
 }
 
 TcpClient::~TcpClient()
@@ -30,7 +32,6 @@ void TcpClient::mainwindowInit()
 {
      connectFlag = false;   /* 设置连接时的状态 */
      ui->progressBar->setValue(0);
-     isStart = true;
 
 
      /* 使用qss设置界面样式*/
@@ -80,6 +81,30 @@ void TcpClient::SignalSlotInit()
             }
             );
 
+    connect(&delayTimer,&QTimer::timeout,
+            [=]()
+            {
+                delayTimer.stop();
+                sendData();
+            }
+            );
+
+
+}
+
+char TcpClient::FileCrcCode(char *data, int len)
+{
+    int i =1;
+
+    char ret = data[0];
+
+    for(i = 1; i < len; i++)
+    {
+        ret ^= data[i];
+    }
+
+    return ret;
+
 }
 /* 连接 */
 void TcpClient::on_connectedBtn_clicked()
@@ -103,72 +128,166 @@ void TcpClient::on_connectedBtn_clicked()
 /* 请求升级 */
 void TcpClient::on_reqUpgardeBtn_clicked()
 {
+    ui->FilePathLineEdit->clear();
+
+    unsigned char sendCmdBuf[7] = LM_REQ_UPGRADE_CMD;
+
+    if(!tcpClientSocket->isOpen())
+    {
+        QMessageBox::information(this,"提示","网口未打开");
+        ui->chooseFileBtn->setEnabled(true);
+    }
+
+    if(sizeof(sendCmdBuf) != \
+            tcpClientSocket->write((char*)sendCmdBuf,sizeof(sendCmdBuf))) {
+        ui->ComRecvtextEdit->append("发送IAP指令有误");
+    } else {
+        ui->ComRecvtextEdit->append("升级请求命令发送完成");
+    }
+
 
 }
 /* 启动升级 */
 void TcpClient::on_startUpgardeBtn_clicked()
 {
+    /* 先发送文件头信息 */
+    QString head = QString("%1##%2").arg(filename).arg(fileSize);
+    qDebug() << head.section("##",0,0);
+     qDebug() << head.section("##",1,1);
+    /* 发送头部信息 */
+    qint64 len = tcpClientSocket->write(head.toUtf8());
 
+    if(len > 0)
+    {
+       /* 发送文件内容，防止黏包，延时20ms */
+        delayTimer.start(10);
+    }else
+    {
+        qDebug() << "头部信息发送失败";
+        file.close();
+        ui->chooseFileBtn->setEnabled(true);
+    }
 }
 /* 终止升级 */
 void TcpClient::on_stopUpgardeBtn_clicked()
 {
 
 }
-/* 选择文件 */
+/* 选择IAP文件 */
 void TcpClient::on_chooseFileBtn_clicked()
 {
+    QString filePath = QFileDialog::getOpenFileName(this,"open","../");
+    if(false == filePath.isEmpty())
+    {
+        filename.clear();
+        fileSize = 0;
+
+        /* 获取文件信息 */
+        QFileInfo info(filePath);
+        filename = info.fileName();
+        fileSize = info.size();
+
+        sendSize = 0;
+
+
+        file.setFileName(filePath);
+
+        bool isOk = file.open(QIODevice::ReadOnly);
+        if(false == isOk)
+        {
+            qDebug() << "只读方式打开失败";
+        }
+        ui->chooseFileBtn->setEnabled(false);
+
+    }else
+    {
+      qDebug() << "选择路径出错";
+    }
 
 }
 /* 清除 */
 void TcpClient::on_clearBtn_clicked()
 {
     ui->ComRecvtextEdit->clear();
+    ui->progressBar->setValue(0);
 }
-
+/* 接收数据 */
 void TcpClient::getData()
 {
-    QByteArray comRecvData = tcpClientSocket->readAll();
+    QByteArray ReceiveDat = tcpClientSocket->readAll();
 
-    if(isStart == true)
+    quint16 ilen = 0;
+    unsigned char ComRecvData[256];
+
+    if(ReceiveDat.length() >= (int)sizeof(ComRecvData))
     {
-        isStart = false;
-        /* 解析头部文件信息，初始化 */
-        filename = QString(comRecvData).section("##",0,0);
-        fileSize = QString(comRecvData).section("##",1,1).toInt();
-        sendSize = 0;
+        ilen = sizeof (ReceiveDat.length());
+    }else {
+        ilen = ReceiveDat.length();
+   }
 
-        /* 打开文件 */
-        file.setFileName("../"+filename);
-        bool isOk = file.open(QIODevice::WriteOnly|QIODevice::Append);
-        if(isOk == false)
-        {
-            //                tcpSocket->disconnectFromHost();
-            //                tcpSocket->close();
-            QMessageBox::information(this,"提示：","打开文件错误");
-            //                return ;
-        }
+    memset(ComRecvData,0,sizeof(ComRecvData));
+    memcpy(ComRecvData,ReceiveDat,ilen);
 
-        /* 进度条初始化 */
-        ui->progressBar->setMinimum(0);
-        ui->progressBar->setMaximum(fileSize/1024);
-    }else
+    /* 解析数据 */
+    /* 解析数据帧头 */
+    if(LM_COMM_FH != ComRecvData[0])
     {
-        quint64 len = file.write(comRecvData);
-        if(len > 0)
-        {
-            sendSize +=len;
-        }
+        ui->ComRecvtextEdit->append("命令帧头错误");
+        ReceiveDat.clear();
+        return;
+    }
+    /* 解析数据帧尾 */
+    if(LM_COMM_EOF != ComRecvData[ilen-1])
+    {
+        ui->ComRecvtextEdit->append("命令帧尾错误");
+        ReceiveDat.clear();
+        return;
+    }
 
-        /* 更新进度条 */
-        ui->progressBar->setValue(sendSize/1024);
-        if(sendSize == fileSize)
-        {
-            //传输文件完毕
-            //                file.close();
-            QMessageBox::information(this,"提示：","文件接收完毕");
-            //                tcpSocket->disconnectFromHost();
-            //                tcpSocket->close();
-        }
+    /* 计算校验和 */
+    int data_sum = 0;
+    data_sum = FileCrcCode((char *)&ComRecvData[1],ilen-3);
+    if(LM_COMM_ACK != ComRecvData[ilen - 2]) {
+        ui->ComRecvtextEdit->append("校验和错误");
+        ReceiveDat.clear();
+        return;
+    }
+
+    /* 提取下位机数据中的有用数据 */
+
+
+}
+
+void TcpClient::sendData()
+{
+    qint64 ilen = 0;
+    ui->progressBar->setMinimum(0);
+    ui->progressBar->setMaximum(fileSize/1024);
+    ui->progressBar->setValue(0);
+
+    do
+    {
+        /* 每次发送数据的大小 */
+        char buf[1024] = {0};
+        ilen = 0;
+
+        /* 往文件中读数据 */
+        ilen = file.read(buf,sizeof(buf));
+        /* 发送多少读多少 */
+        ilen = tcpClientSocket->write(buf,ilen);
+
+        /* 发送的数据需要积累 */
+        sendSize += ilen;
+         ui->progressBar->setValue(sendSize/1024);
+         qDebug() << "sendSize" << sendSize;
+
+    }while(ilen > 0);
+
+    if(fileSize == sendSize)
+    {
+        ui->ComRecvtextEdit->setText("文件发送完毕");
+        file.close();
+
     }
 }
